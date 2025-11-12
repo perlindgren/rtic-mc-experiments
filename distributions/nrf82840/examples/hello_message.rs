@@ -44,13 +44,16 @@ mod app {
             loop {
                 self.count += 1;
                 println!("looping in idle... {}", self.count);
+                // if let Err(_e) = M1::spawn(1) {
+                //     error!("couldn't spawn task M1 for the first time ")
+                // }
                 rtic::export::NVIC::pend(pac::Interrupt::TIMER0);
                 asm::delay(48_000_000);
             }
         }
     }
 
-    #[task(priority = 7, binds = TIMER0, shared = [x])]
+    #[task(priority = 6, binds = TIMER0, shared = [x])]
     pub struct T0 {
         count: u32,
     }
@@ -64,6 +67,9 @@ mod app {
                 self.count += 1;
                 println!("Timer0... {}", self.count);
                 rtic::export::NVIC::pend(pac::Interrupt::TIMER1);
+                if let Err(_e) = M1::spawn(1) {
+                    error!("couldn't spawn task M1 for the first time ")
+                }
                 println!("Timer0... {}", self.count);
             });
         }
@@ -85,6 +91,22 @@ mod app {
             if self.count == 6 {
                 self::panic!("--done--");
             }
+        }
+    }
+
+    #[sw_task(priority = 5)]
+    pub struct M1 {
+        count: u32,
+    }
+    impl RticSwTask for M1 {
+        type SpawnInput = u32;
+        fn init() -> Self {
+            Self { count: 0 }
+        }
+
+        fn exec(&mut self, input: u32) {
+            self.count += input;
+            println!("M1 ... {} {}", input, self.count);
         }
     }
 }

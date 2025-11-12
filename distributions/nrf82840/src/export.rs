@@ -84,11 +84,15 @@ pub unsafe fn lock<T, R>(
     f: impl FnOnce(&mut T) -> R,
 ) -> R {
     if ceiling == (1 << nvic_prio_bits) {
-        cortex_m::interrupt::free(|_| f(&mut *ptr))
+        rtic_cs::free(|| f(&mut *ptr))
     } else {
         let current = basepri::read();
         basepri_max::write(cortex_logical2hw(ceiling, nvic_prio_bits));
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+
         let r = f(&mut *ptr);
+
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
         basepri::write(current);
         r
     }

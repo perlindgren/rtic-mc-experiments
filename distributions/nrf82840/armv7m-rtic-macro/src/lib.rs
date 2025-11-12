@@ -18,7 +18,7 @@ pub fn app(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let mut builder = RticMacroBuilder::new(ArmV7mRtic);
 
-    // builder.bind_pre_core_pass(sw_pass); // run software pass second
+    builder.bind_pre_core_pass(sw_pass); // run software pass second
     builder.build_rtic_macro(args, input)
 }
 
@@ -72,11 +72,22 @@ impl CorePassBackend for ArmV7mRtic {
 
     fn generate_interrupt_free_fn(&self, mut empty_body_fn: ItemFn) -> ItemFn {
         // eprintln!("{}", empty_body_fn.to_token_stream().to_string()); // enable comment to see the function signature
+
         let fn_body = parse_quote! {
             {
+
                 unsafe { core::arch::asm!("cpsid i"); } // critical section begin
+                core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+                unsafe { OLD_CS = CS };
+                unsafe { CS = true };
+
                 let r = f();
-                unsafe { core::arch::asm!("cpsie i"); } // critical section end
+
+                if unsafe { !OLD_CS }  {
+                    unsafe { OLD_CS = false };
+                    core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+                    unsafe { core::arch::asm!("cpsie i"); } // critical section end
+                }
                 r
             }
         };
@@ -95,6 +106,9 @@ impl CorePassBackend for ArmV7mRtic {
         // define only once
         if app_info.core == 0 {
             Some(quote! {
+                // globals to be used by custom interrupt free critical section
+                static mut OLD_CS: bool = false;
+                static mut CS: bool = false;
                 use #peripheral_crate::NVIC_PRIO_BITS;
             })
         } else {
@@ -159,7 +173,7 @@ impl SwPassBackend for SwPassBackendImpl {
 
     /// Provide the implementation/body of the cross-core interrupt pending function.
     fn generate_cross_pend_fn(&self, mut _empty_body_fn: ItemFn) -> Option<ItemFn> {
-        unimplemented!()
+        None
     }
 }
 
