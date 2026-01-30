@@ -9,17 +9,17 @@ extern crate proc_macro;
 
 struct ArmV7mRtic;
 
-use rtic_readers_writer_pass::DeadlineToPriorityPass;
+use rtic_reader_writer_pass::DeadlineToPriorityPass;
 // use rtic_sw_pass::{SoftwarePass, SwPassBackend};
 
 #[proc_macro_attribute]
 pub fn app(args: TokenStream, input: TokenStream) -> TokenStream {
-    let rw_pass = DeadlineToPriorityPass::new(8);
+    // use the standard software pass provided by rtic-sw-pass crate
+    let deadline_pass = DeadlineToPriorityPass::new(8);
 
     let mut builder = RticMacroBuilder::new(ArmV7mRtic);
-
-    // builder.bind_pre_core_pass(sw_pass); // run software pass
-    builder.bind_pre_core_pass(rw_pass); // run reader-writer pass
+    builder.bind_pre_core_pass(deadline_pass); // run software pass second
+                                               // builder.bind_pre_core_pass(sw_pass); // run software pass second
     builder.build_rtic_macro(args, input)
 }
 
@@ -38,7 +38,7 @@ impl CorePassBackend for ArmV7mRtic {
         let initialize_dispatcher_interrupts =
             app_analysis.used_irqs.iter().map(|(irq_name, priority)| {
                 quote! {
-                    assert!(0 < #priority && #priority <= 1 << NVIC_PRIO_BITS, "priority level not supported");
+                    self::assert!(0 < #priority && #priority <= 1 << NVIC_PRIO_BITS, "priority level not supported");
                     //set interrupt priority
                     #peripheral_crate::CorePeripherals::steal()
                         .NVIC
@@ -51,17 +51,11 @@ impl CorePassBackend for ArmV7mRtic {
                 }
             });
 
-        // let configure_fifo = if app_args.cores > 1 {
-        //     Some(configure_fifo(peripheral_crate, sub_app.core))
-        // } else {
-        //     None
-        // };
-
         Some(quote! {
             unsafe {
                 #(#initialize_dispatcher_interrupts)*
             }
-            // #configure_fifo
+
         })
     }
 
@@ -72,24 +66,13 @@ impl CorePassBackend for ArmV7mRtic {
     }
 
     fn generate_interrupt_free_fn(&self, mut empty_body_fn: ItemFn) -> ItemFn {
-        // eprintln!("{}", empty_body_fn.to_token_stream().to_string()); // enable comment to see the function signature
+        //     // eprintln!("{}", empty_body_fn.to_token_stream().to_string()); // enable comment to see the function signature
 
         let fn_body = parse_quote! {
             {
+                // call the rtic_cs implementation
+                rtic_cs::free(f)
 
-                unsafe { core::arch::asm!("cpsid i"); } // critical section begin
-                core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
-                unsafe { OLD_CS = CS };
-                unsafe { CS = true };
-
-                let r = f();
-
-                if unsafe { !OLD_CS }  {
-                    unsafe { OLD_CS = false };
-                    core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
-                    unsafe { core::arch::asm!("cpsie i"); } // critical section end
-                }
-                r
             }
         };
         empty_body_fn.block = Box::new(fn_body);
@@ -108,7 +91,7 @@ impl CorePassBackend for ArmV7mRtic {
         if app_info.core == 0 {
             Some(quote! {
                 // globals to be used by custom interrupt free critical section
-                static mut OLD_CS: bool = false;
+                // static mut OLD_CS: bool = false;
                 static mut CS: bool = false;
                 use #peripheral_crate::NVIC_PRIO_BITS;
             })
@@ -160,37 +143,3 @@ impl CorePassBackend for ArmV7mRtic {
         Ok(())
     }
 }
-
-// struct SwPassBackendImpl;
-// impl SwPassBackend for SwPassBackendImpl {
-//     /// Provide the implementation/body of the core local interrupt pending function.
-//     fn generate_local_pend_fn(&self, mut empty_body_fn: ItemFn) -> ItemFn {
-//         let body = parse_quote!({
-//             rtic::export::NVIC::pend(irq_nbr);
-//         });
-//         empty_body_fn.block = Box::new(body);
-//         empty_body_fn
-//     }
-
-//     /// Provide the implementation/body of the cross-core interrupt pending function.
-//     fn generate_cross_pend_fn(&self, mut _empty_body_fn: ItemFn) -> Option<ItemFn> {
-//         None
-//     }
-// }
-
-// fn configure_fifo(peripheral_crate: &syn::Path, _core: u32) -> TokenStream2 {
-//     quote! {
-//         unsafe {
-//             let fifo = &mut rtic::mailbox::Mailbox;
-//             // drain fifo
-//             fifo.drain();
-//             // unpend the FIFO interrupt
-//             #peripheral_crate::NVIC::unpend(rtic::mailbox::InterruptExt::MAILBOX_INTERRUPT);
-//             // Set FIFO0 interrupts priority to MAX priority
-//             #peripheral_crate::CorePeripherals::steal()
-//                 .NVIC.set_priority( rtic::mailbox::InterruptExt::MAILBOX_INTERRUPT, #MAX_TASK_PRIORITY as u8);
-//             // unmask FIFO irq
-//             #peripheral_crate::NVIC::unmask( rtic::mailbox::InterruptExt::MAILBOX_INTERRUPT);
-//         }
-//     }
-// }

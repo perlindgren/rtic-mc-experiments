@@ -1,0 +1,39 @@
+[package]
+name = "rtic"
+version = "0.1.0-nrf52840"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+test = false
+bench = false
+
+[dependencies]
+rtic-cs = { path = "rtic-cs" }
+rtic-sw-pass = { path = "../../compilation_passes/rtic-sw-pass", default-features = false }
+rtic-reader-writer-pass = { path = "../../compilation_passes/rtic-reader-writer-pass", default-features = false }
+cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
+rtic-macro = { path = "armv7m-rtic-macro" }
+
+#, default-features = false 
+log = "0.4.29"
+
+nrf52840-hal = { version = "0.19.0" }
+rtt-target = { version = "0.6.1" }
+
+[dev-dependencies]
+
+cortex-m = "0.7.7"
+cortex-m-rt = "0.7.5"
+
+panic-halt = "1.0.0"
+
+defmt = "1.0.1"
+defmt-rtt = "1.1.0"
+panic-probe = { version = "1.0.0", features = ["print-defmt"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(have_basepri)'] }
+
+# [features]
+# swtasks = ["rtic-macro/swtasks"]
